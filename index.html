@@ -718,47 +718,99 @@
       renderMessages();
     }
 
-    function generateAssistantReply(prompt) {
-      const agent = state.activeAgent;
-      const model = modelSelect.value;
-      const templates = {
-        Coding: `## Coding Agent\nI can scaffold application architecture, generate components, explain APIs, and design deployable systems.\n\nRequested task: **${prompt}**\n\n- Active model: ${model}\n- Streaming: ${state.stream ? 'enabled' : 'disabled'}\n- Memory: ${state.memory ? 'enabled' : 'disabled'}\n\n\\`\\`\\`ts\nexport async function orchestrateTask(input: string) {\n  return { mode: 'coding', input, status: 'ready' };\n}\n\\`\\`\\``,
-        Research: `## Research Agent\nI can break the topic into sources, claims, and summaries.\n\nFor **${prompt}**, I would:\n1. collect high-signal sources,\n2. compare contradictions,\n3. create a structured answer with citations.`,
-        Writing: `## Writing Agent\nHere is a sharper writing direction for **${prompt}**:\n\n- Lead with the main outcome.\n- Keep the tone crisp and premium.\n- End with an action step or implementation note.`,
-        Study: `## Study Agent\nFor **${prompt}**, I would convert the topic into:\n- concept map\n- formula sheet\n- practice ladder\n- quick revision prompts`,
-        Mathematics: `## Mathematics Agent\nI can solve symbolic, numeric, and reasoning-heavy problems.\n\nFor **${prompt}**, I would separate:\n- given data\n- required result\n- method\n- final answer with verification`,
-        Productivity: `## Productivity Agent\nI can turn **${prompt}** into a workflow with priorities, deadlines, and reusable templates.`,
-        Image: `## Image Agent\nI can convert **${prompt}** into a cinematic prompt, generate variants, and manage the gallery history.`,
-        Auto: `## Routed Response\nVAZIONIX selected the **best-fit agent pipeline** for your request.\n\nPrompt: **${prompt}**\n\n- Model: ${model}\n- Primary route: ${prompt.toLowerCase().includes('code') ? 'Coding' : prompt.toLowerCase().includes('image') ? 'Image' : 'Research'}\n- Tool mode: ${prompt.toLowerCase().includes('file') ? 'File intelligence' : 'General reasoning'}\n- Memory support: ${state.memory ? 'enabled' : 'disabled'}\n\nI can continue with drafting, analysis, structured notes, exports, or stepwise execution.`
-      };
-      return templates[agent] || templates.Auto;
+async function askGemini(prompt) {
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: prompt
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Request failed');
     }
 
-    function handleSend() {
-      const prompt = promptInput.value.trim();
-      if (!prompt) return;
-      addMessage('user', prompt);
-      promptInput.value = '';
-      const reply = generateAssistantReply(prompt);
-      if (state.stream) {
-        let acc = '';
-        state.messages.push({ role: 'assistant', content: '' });
+    return data.reply;
+
+  } catch (error) {
+    console.error(error);
+    return `# Error\nUnable to contact Gemini.\n\n${error.message}`;
+  }
+}
+
+async function handleSend() {
+
+  const prompt = promptInput.value.trim();
+
+  if (!prompt) return;
+
+  addMessage('user', prompt);
+
+  promptInput.value = '';
+
+  state.messages.push({
+    role: 'assistant',
+    content: 'Thinking...'
+  });
+
+  renderMessages();
+
+  const target = state.messages[state.messages.length - 1];
+
+  try {
+
+    const reply = await askGemini(prompt);
+
+    if (state.stream) {
+
+      let acc = '';
+
+      target.content = '';
+
+      const words = reply.split(' ');
+
+      let i = 0;
+
+      const timer = setInterval(() => {
+
+        if (i >= words.length) {
+          clearInterval(timer);
+          return;
+        }
+
+        acc += (i === 0 ? '' : ' ') + words[i];
+
+        target.content = acc;
+
         renderMessages();
-        const target = state.messages[state.messages.length - 1];
-        const words = reply.split(' ');
-        let i = 0;
-        const timer = setInterval(() => {
-          acc += (i === 0 ? '' : ' ') + words[i];
-          target.content = acc;
-          renderMessages();
-          i++;
-          if (i >= words.length) clearInterval(timer);
-        }, 22);
-      } else {
-        addMessage('assistant', reply);
-      }
+
+        i++;
+
+      }, 15);
+
+    } else {
+
+      target.content = reply;
+
+      renderMessages();
+
     }
 
+  } catch (err) {
+
+    target.content =
+      '# Error\nFailed to generate response.';
+
+    renderMessages();
+
+  }
+}
     document.querySelectorAll('.nav-btn, .mobile-nav').forEach(btn => btn.addEventListener('click', () => switchView(btn.dataset.view)));
     document.getElementById('newChatBtn').addEventListener('click', () => {
       state.chats.unshift({ id: Date.now(), title: `New chat ${state.chats.length + 1}`, pinned: false });
