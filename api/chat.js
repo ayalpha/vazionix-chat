@@ -31,16 +31,17 @@ export default async function handler(req, res) {
 
     const data = await response.json();
 
-    const text =
-      data.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "No response generated.";
+    const reply =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+      "No response.";
 
-    res.status(200).json({
-      reply: text
+    return res.status(200).json({
+      reply
     });
-  } catch (error) {
-    res.status(500).json({
-      error: error.message
+
+  } catch (err) {
+    return res.status(500).json({
+      error: err.message
     });
   }
 }
